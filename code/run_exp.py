@@ -13,14 +13,15 @@ if __name__ == "__main__":
 
     current_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    subject = 1
+    subject = input("Subject number: ").strip()
+    day = input("Day number: ").strip()
     dir_data = "../data"
-    full_path = os.path.join(dir_data, f"sub_{subject}_data.csv")
-    full_path_move = os.path.join(dir_data, f"sub_{subject}_data_move.csv")
+    full_path = os.path.join(dir_data, f"sub_{subject}_day_{day}_data.csv")
+    full_path_move = os.path.join(dir_data, f"sub_{subject}_day_{day}_data_move.csv")
 
     # Uncomment to check if file already exists
-    if os.path.exists(full_path):
-        print(f"File {f_name} already exists. Aborting.")
+    if os.path.exists(full_path) or os.path.exists(full_path_move):
+        print(f"File {full_path} or {full_path_move} already exists. Aborting.")
         sys.exit()
 
     use_liberty = False
@@ -122,77 +123,135 @@ if __name__ == "__main__":
     # px_per_cm = np.mean([1920 / 60, 1080 / 33])
     px_per_cm = 1080 / 33
 
-    target_angles = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150]
+    target_angles = [-30, -15, 0, 15, 30]
 
     rng = np.random.default_rng()
 
-    # The experiment began with a familiarization phase of 33
-    # reach trials (3 trials per target in pseudorandom order)
-    # with continuous veridical visual feedback provided
-    # throughout the reach.
-    endpoint_visible_familiarisation = np.ones(33)
-    rotation_familiarisation = np.zeros(33)
-    target_angle_familiarisation = rng.permutation(np.array(target_angles * 3))
+    def shuffled_target_cycles(n_trials):
+        target_sequence = []
+        while len(target_sequence) < n_trials:
+            target_sequence.extend(rng.permutation(target_angles))
+        return np.array(target_sequence[:n_trials])
 
-    # The baseline phase consisted of 198 reach trials across
-    # all 11 target directions (18 trials per target). On each
-    # trial, the location of the target was randomized across
-    # participants. For 2/3 of the reaches (132 trials),
-    # continuous veridical cursor feedback was provided
-    # throughout the trial. For the remaining 1/3 (66 trials),
-    # visual feedback was completely withheld (i.e., no feedback
-    # was given during the reach and no feedback was given at
-    # the end of the reach about reach accuracy).
-    endpoint_visible_basline = np.concatenate((np.zeros(66), np.ones(132)))
-    rotation_baseline = np.zeros(198)
-    target_angle_baseline = rng.permutation(np.array(target_angles * 18))
+    # The diagnostic phase is the nf_burst_after_clamp design.
+    # The repeated motif is clamp, no feedback, no feedback,
+    # no feedback, rotated, across a balanced five-target grid.
+    n_diagnostic = 200
+    target_angle_diagnostic = np.array(target_angles * 40)
+    rng.shuffle(target_angle_diagnostic)
 
-    # The adaptation phase consisted of 110 reaches toward a
-    # single target positioned at 0° in the frontal plane
-    # (straight ahead; see Fig. 1b). During this phase, endpoint
-    # feedback was rotated about the starting position by 30°
-    # (CW or CCW; counterbalanced between participants).
-    endpoint_visible_adaptation = np.ones(110)
-    rotation_adaptation = np.ones(110) * 30 * np.pi / 180
-    target_angle_adaptation = np.zeros(110)
+    feedback_type_diagnostic = []
+    rotation_diagnostic = []
+    clamp_error_diagnostic = []
+    endpoint_visible_diagnostic = []
 
-    # The generalization phase consisted of 66 reaches to 1 of
-    # 11 target directions (10 untrained directions) presented
-    # in pseudorandom order without visual feedback.
-    endpoint_visible_generalization = np.zeros(66)
-    rotation_generalization = np.ones(66) * 30 * np.pi / 180
-    target_angle_generalization = np.concatenate(
-        [rng.permutation(target_angles) for _ in range(6)])
-    endpoint_visible_generalization[target_angle_generalization == 0] = 1
+    motif = ["clamp", "none", "none", "none", "rotated"]
+    state_centers = [0, 8, -8, 0]
+    rotation_set = [-12, -8, -4, 0, 4, 8, 12]
+    clamp_values = [-12, -8, -4, 4, 8, 12]
+
+    for i in range(n_diagnostic):
+        motif_item = motif[i % len(motif)]
+        cycle = i // len(motif)
+        center = state_centers[cycle % len(state_centers)]
+
+        if motif_item == "none":
+            feedback_type_diagnostic.append("none")
+            rotation_diagnostic.append(0)
+            clamp_error_diagnostic.append(np.nan)
+            endpoint_visible_diagnostic.append(0)
+        elif motif_item == "clamp":
+            feedback_type_diagnostic.append("clamp")
+            rotation_diagnostic.append(0)
+            clamp_error_diagnostic.append(clamp_values[(cycle + i) % len(clamp_values)])
+            endpoint_visible_diagnostic.append(1)
+        else:
+            feedback_type_diagnostic.append("rotated")
+            base_rotation = rotation_set[(cycle + i) % len(rotation_set)]
+            rotation_diagnostic.append(np.clip(center + base_rotation, -12, 12))
+            clamp_error_diagnostic.append(np.nan)
+            endpoint_visible_diagnostic.append(1)
+
+    feedback_type_diagnostic = np.array(feedback_type_diagnostic)
+    rotation_diagnostic = np.array(rotation_diagnostic) * np.pi / 180
+    clamp_error_diagnostic = np.array(clamp_error_diagnostic) * np.pi / 180
+    endpoint_visible_diagnostic = np.array(endpoint_visible_diagnostic)
+
+    # The adaptation phase uses shuffled cycles through all five
+    # target locations. Endpoint feedback is rotated except on
+    # every 10th trial, where feedback is withheld.
+    n_adaptation = 110
+    target_angle_adaptation = shuffled_target_cycles(n_adaptation)
+    feedback_type_adaptation = np.array(
+        ["none" if i % 10 == 9 else "rotated" for i in range(n_adaptation)])
+    endpoint_visible_adaptation = (feedback_type_adaptation != "none").astype(float)
+    rotation_adaptation = np.ones(n_adaptation) * 30 * np.pi / 180
+    rotation_adaptation[feedback_type_adaptation == "none"] = 0
+    clamp_error_adaptation = np.ones(n_adaptation) * np.nan
+
+    # The generalization phase uses shuffled cycles through all
+    # five target locations with no feedback.
+    n_generalization = 66
+    target_angle_generalization = shuffled_target_cycles(n_generalization)
+    feedback_type_generalization = np.array(["none"] * n_generalization)
+    endpoint_visible_generalization = np.zeros(n_generalization)
+    rotation_generalization = np.zeros(n_generalization)
+    clamp_error_generalization = np.ones(n_generalization) * np.nan
 
     # concatenate all phases
     endpoint_visible = np.concatenate([
-        endpoint_visible_familiarisation, endpoint_visible_basline,
-        endpoint_visible_adaptation, endpoint_visible_generalization
+        endpoint_visible_diagnostic,
+        endpoint_visible_adaptation,
+        endpoint_visible_generalization
     ])
 
     rotation = np.concatenate([
-        rotation_familiarisation, rotation_baseline, rotation_adaptation,
+        rotation_diagnostic,
+        rotation_adaptation,
         rotation_generalization
     ])
 
-    target_angle = np.concatenate([
-        target_angle_familiarisation, target_angle_baseline,
-        target_angle_adaptation, target_angle_generalization
+    clamp_error = np.concatenate([
+        clamp_error_diagnostic,
+        clamp_error_adaptation,
+        clamp_error_generalization
     ])
 
-    fig, ax = plt.subplots(3, 1, squeeze=False, figsize=(6, 9))
-    ax[0, 0].plot(rotation / rotation.max(), 'o')
+    feedback_type = np.concatenate([
+        feedback_type_diagnostic,
+        feedback_type_adaptation,
+        feedback_type_generalization
+    ])
+
+    target_angle = np.concatenate([
+        target_angle_diagnostic,
+        target_angle_adaptation,
+        target_angle_generalization
+    ])
+
+    phase = np.concatenate([
+        np.array(["diagnostic"] * n_diagnostic),
+        np.array(["adaptation"] * n_adaptation),
+        np.array(["generalization"] * n_generalization)
+    ])
+
+    rotation_or_clamp = rotation.copy()
+    clamp_trials = feedback_type == "clamp"
+    rotation_or_clamp[clamp_trials] = clamp_error[clamp_trials]
+
+    fig, ax = plt.subplots(3, 1, squeeze=False, figsize=(8, 9))
+    ax[0, 0].plot(rotation_or_clamp * 180 / np.pi, 'o')
     ax[1, 0].plot(endpoint_visible, 'o')
     ax[2, 0].plot(target_angle, 'o')
     ax[2, 0].set_yticks(np.unique(target_angle))
-    ax[0, 0].set_ylabel('rotation')
+    ax[0, 0].set_ylabel('rotation / clamp')
     ax[1, 0].set_ylabel('endpoint visible')
     ax[2, 0].set_ylabel('target angle')
+    ax[2, 0].set_xlabel('trial')
     plt.show()
 
     n_trial = rotation.shape[0]
-    condition = "mis_rep"
+    condition = "nf_burst_after_clamp"
     su = np.ones(n_trial)
 
     pygame.init()
@@ -266,10 +325,14 @@ if __name__ == "__main__":
         'date': [],
         'condition': [],
         'subject': [],
+        'day': [],
         'trial': [],
+        'phase': [],
+        'feedback_type': [],
         'target_angle': [],
         'su': [],
         'rotation': [],
+        'clamp_error': [],
         'rt': [],
         'mt': [],
         'ep': []
@@ -278,6 +341,7 @@ if __name__ == "__main__":
     trial_move = {
         'condition': [],
         'subject': [],
+        'day': [],
         'trial': [],
         'state': [],
         't': [],
@@ -560,11 +624,19 @@ if __name__ == "__main__":
                                (target_pos[1] - start_pos[1])**2)
 
             if r >= r_target:
-                ep = cursor_pos
+                ep = hand_pos
 
-                ep_theta = np.arctan2(ep[1] - start_pos[1], ep[0] - start_pos[0])
-                ep_target = (r_target * np.cos(ep_theta) + start_pos[0],
-                             r_target * np.sin(ep_theta) + start_pos[1])
+                ep_theta = np.arctan2(ep[1] - start_pos[1],
+                                      ep[0] - start_pos[0])
+                if feedback_type[trial] == "clamp":
+                    feedback_angle = target_angle[trial] + clamp_error[trial] * 180 / np.pi
+                    ep_target_x = -r_target * np.cos(-(feedback_angle + 90) * np.pi / 180.0)
+                    ep_target_y = r_target * np.sin(-(feedback_angle + 90) * np.pi / 180.0)
+                    ep_target = (start_pos[0] + ep_target_x,
+                                 start_pos[1] + ep_target_y)
+                else:
+                    ep_target = (r_target * np.cos(ep_theta) + start_pos[0],
+                                 r_target * np.sin(ep_theta) + start_pos[1])
 
                 mt = t_state
 
@@ -596,10 +668,14 @@ if __name__ == "__main__":
                 trial_data['date'].append(current_date)
                 trial_data['condition'].append(condition)
                 trial_data['subject'].append(subject)
+                trial_data['day'].append(day)
                 trial_data['trial'].append(trial)
+                trial_data['phase'].append(phase[trial])
+                trial_data['feedback_type'].append(feedback_type[trial])
                 trial_data['target_angle'].append(target_angle[trial])
                 trial_data['su'].append(np.round(su[trial], 2))
                 trial_data['rotation'].append(np.round(rotation[trial], 2))
+                trial_data['clamp_error'].append(np.round(clamp_error[trial], 2))
                 trial_data['rt'].append(rt)
                 trial_data['mt'].append(mt)
                 trial_data['ep'].append(np.round(ep_theta, 2))
@@ -610,6 +686,7 @@ if __name__ == "__main__":
 
         trial_move['condition'].append(condition)
         trial_move['subject'].append(subject)
+        trial_move['day'].append(day)
         trial_move['trial'].append(trial)
         trial_move['state'].append(state_current)
         trial_move['t'].append(time_exp)
