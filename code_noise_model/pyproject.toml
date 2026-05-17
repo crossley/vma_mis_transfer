@@ -1,0 +1,17 @@
+[project]
+name = "noise-model"
+version = "0.1.0"
+description = "Design and model-recovery tools for implicit adaptation noise models."
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "pandas",
+  "scipy",
+  "matplotlib",
+  "scikit-learn",
+  "statsmodels",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

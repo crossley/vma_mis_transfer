@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+
+code_noise_model/outputs/
+code_noise_model/reports/
+
+data/sub_*_day_*_data.csv
+data/sub_*_day_*_data_move.csv
