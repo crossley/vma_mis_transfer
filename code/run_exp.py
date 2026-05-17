@@ -332,7 +332,9 @@ if __name__ == "__main__":
         'target_angle': [],
         'su': [],
         'rotation': [],
+        'rotation_deg': [],
         'clamp_error': [],
+        'clamp_error_deg': [],
         'rt': [],
         'mt': [],
         'ep': []
@@ -487,10 +489,6 @@ if __name__ == "__main__":
         time_exp += clock_exp.tick()
         screen.fill((0, 0, 0))
 
-        rot_mat = np.array([[np.cos(rotation[trial]), -np.sin(rotation[trial])],
-                            [np.sin(rotation[trial]),
-                             np.cos(rotation[trial])]])
-
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
@@ -519,8 +517,6 @@ if __name__ == "__main__":
         target_pos_x = -6 * px_per_cm * np.cos(-(target_angle[trial] + 90) * np.pi / 180.0)
         target_pos_y = 6 * px_per_cm * np.sin(-(target_angle[trial] + 90) * np.pi / 180.0)
         target_pos = (start_pos[0] + target_pos_x, start_pos[1] + target_pos_y)
-        cursor_pos = np.dot(np.array(hand_pos) - np.array(start_pos),
-                            rot_mat) + start_pos
 
         if state_current == "state_init":
             t_state += clock_state.tick()
@@ -635,6 +631,8 @@ if __name__ == "__main__":
                     ep_target = (start_pos[0] + ep_target_x,
                                  start_pos[1] + ep_target_y)
                 else:
+                    # Use the raw hand endpoint here. The visual rotation is
+                    # applied once below when cloud_rot is constructed.
                     ep_target = (r_target * np.cos(ep_theta) + start_pos[0],
                                  r_target * np.sin(ep_theta) + start_pos[1])
 
@@ -675,7 +673,9 @@ if __name__ == "__main__":
                 trial_data['target_angle'].append(target_angle[trial])
                 trial_data['su'].append(np.round(su[trial], 2))
                 trial_data['rotation'].append(np.round(rotation[trial], 2))
+                trial_data['rotation_deg'].append(np.round(rotation[trial] * 180 / np.pi, 2))
                 trial_data['clamp_error'].append(np.round(clamp_error[trial], 2))
+                trial_data['clamp_error_deg'].append(np.round(clamp_error[trial] * 180 / np.pi, 2))
                 trial_data['rt'].append(rt)
                 trial_data['mt'].append(mt)
                 trial_data['ep'].append(np.round(ep_theta, 2))
