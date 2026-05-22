@@ -3,6 +3,53 @@
 Visuomotor adaptation experiment code and trial-design tools for estimating
 different sources of reaching variability.
 
+## Requirements
+
+Python 3.11 is required (developed and tested on 3.11.8). The versions below
+are what was used during development; newer patch releases should work.
+
+### Experiment runner (`code/`)
+
+Install with pip:
+
+```bash
+pip install numpy pandas matplotlib pygame pyserial
+```
+
+| Package   | Tested version | Notes                              |
+|-----------|----------------|------------------------------------|
+| numpy     | 1.26.4         |                                    |
+| pandas    | 2.2.1          |                                    |
+| matplotlib| 3.8.3          |                                    |
+| pygame    | 2.5.2          |                                    |
+| pyserial  | 3.5            | Only needed when `use_liberty = True` |
+
+### Noise-model design tools (`code_noise_model/`)
+
+Install the package in editable mode from the `code_noise_model/` directory:
+
+```bash
+pip install -e .
+```
+
+This installs all required dependencies (numpy, pandas, scipy, matplotlib,
+scikit-learn, statsmodels). Additionally install seaborn for the plotting
+scripts:
+
+```bash
+pip install seaborn
+```
+
+| Package      | Tested version |
+|--------------|----------------|
+| numpy        | 1.26.4         |
+| pandas       | 2.2.1          |
+| scipy        | 1.16.0         |
+| matplotlib   | 3.8.3          |
+| scikit-learn | 1.5.1          |
+| statsmodels  | 0.14.5         |
+| seaborn      | 0.13.2         |
+
 ## Contents
 
 - `code/run_exp.py`: Pygame experiment runner. It supports mouse input for
