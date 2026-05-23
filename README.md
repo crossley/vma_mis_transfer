@@ -10,10 +10,17 @@ are what was used during development; newer patch releases should work.
 
 ### Experiment runner (`code/`)
 
-Install with pip:
+Install pinned dependencies from the requirements file:
 
 ```bash
-pip install numpy pandas matplotlib pygame pyserial
+pip install -r code/requirements.txt
+```
+
+If you are using the Liberty tracker (`use_liberty = True` in `run_exp.py`),
+also install pyserial:
+
+```bash
+pip install pyserial==3.5
 ```
 
 | Package   | Tested version | Notes                              |
@@ -29,15 +36,15 @@ pip install numpy pandas matplotlib pygame pyserial
 Install the package in editable mode from the `code_noise_model/` directory:
 
 ```bash
-pip install -e .
+pip install -e code_noise_model/
 ```
 
-This installs all required dependencies (numpy, pandas, scipy, matplotlib,
-scikit-learn, statsmodels). Additionally install seaborn for the plotting
-scripts:
+This installs all required dependencies at their pinned versions (numpy,
+pandas, scipy, matplotlib, scikit-learn, statsmodels). Additionally install
+seaborn for the plotting scripts:
 
 ```bash
-pip install seaborn
+pip install seaborn==0.13.2
 ```
 
 | Package      | Tested version |

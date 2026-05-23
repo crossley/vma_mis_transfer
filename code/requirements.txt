@@ -1,0 +1,5 @@
+numpy==1.26.4
+pandas==2.2.1
+matplotlib==3.8.3
+pygame==2.5.2
+# pyserial==3.5  # Uncomment if use_liberty = True in run_exp.py
