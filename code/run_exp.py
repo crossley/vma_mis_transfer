@@ -61,6 +61,39 @@ if __name__ == "__main__":
         return positions
 
 
+    def capture_stable_position(ser, recordsize, averager, n_samples=5):
+        """Return a robust position estimate and within-burst movement in cm."""
+        samples = np.array([
+            getPosition(ser, recordsize, averager)[0:2]
+            for _ in range(n_samples)
+        ])
+        position = np.median(samples, axis=0)
+        radial_error = np.linalg.norm(samples - position, axis=1)
+        movement = np.percentile(radial_error, 90)
+        return position, movement
+
+
+    def fit_affine_calibration(sensor_points, screen_points):
+        """Fit [sensor_x, sensor_y, 1] @ transform = [screen_x, screen_y]."""
+        sensor_design = np.column_stack([
+            np.asarray(sensor_points),
+            np.ones(len(sensor_points))
+        ])
+        transform, _, rank, _ = np.linalg.lstsq(
+            sensor_design, np.asarray(screen_points), rcond=None)
+        if rank < 3:
+            raise ValueError("Calibration points do not span a 2D area")
+
+        predicted = sensor_design @ transform
+        errors = np.linalg.norm(predicted - screen_points, axis=1)
+        return transform, errors
+
+
+    def sensor_to_screen(sensor_position, transform):
+        sensor_homogeneous = np.append(np.asarray(sensor_position), 1.0)
+        return tuple(sensor_homogeneous @ transform)
+
+
     if use_liberty:
         ser = serial.Serial()
         ser.baudrate = 115200
@@ -357,128 +390,130 @@ if __name__ == "__main__":
         state_current = "state_init"
 
     else:
-
-        rig_coord_upper_left = (0, 0)
-        rig_coord_upper_right = (0, 0)
-        rig_coord_lower_right = (0, 0)
-        rig_coord_lower_left = (0, 0)
-
-        min_x = 1
-        max_x = 2
-        min_y = 1
-        max_y = 2
-
+        inset_x = screen_width / 4
+        inset_y = screen_height / 4
+        calibration_targets = [
+            (center_x, center_y),
+            (inset_x, inset_y),
+            (screen_width - inset_x, inset_y),
+            (screen_width - inset_x, screen_height - inset_y),
+            (inset_x, screen_height - inset_y),
+        ]
+        first_pass = np.arange(len(calibration_targets))
+        second_pass = np.random.default_rng().permutation(
+            len(calibration_targets))
+        if second_pass[0] == first_pass[-1]:
+            second_pass = np.roll(second_pass, 1)
+        calibration_order = np.concatenate([first_pass, second_pass])
+        sensor_points = []
+        calibration_index = 0
+        calibration_message = ""
+        calibration_message_until = 0
+        calibration_transform = None
         calibrating = True
-        state_current = "calibrate_upper_left"
+        abort_calibration = False
+
         while calibrating:
+            clock_state.tick(60)
+            screen.fill(black)
 
-            screen.fill((0, 0, 0))
+            target_index = calibration_order[calibration_index]
+            prompt = font.render(
+                "Hold still on point "
+                f"{calibration_index + 1}/{len(calibration_order)}, then press SPACE",
+                True, white)
+            prompt_rect = prompt.get_rect(
+                center=(screen_width / 2, screen_height / 8))
+            screen.blit(prompt, prompt_rect)
+            pygame.draw.circle(
+                screen, white, calibration_targets[target_index], 15, 0)
 
-            hand_pos = getPosition(ser, recordsize, averager)[0:2]
-
-            for event in pygame.event.get():
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        running = False
-                        pygame.quit()
-                    else:
-                        resp = event.key
-
-            if state_current == "calibrate_upper_left":
-                t_state += clock_state.tick()
-                text = font.render(
-                    "Please move to the upper left corner of the screen", True,
-                    (255, 255, 255))
-                text_rect = text.get_rect(center=(screen_width / 2,
-                                                  screen_height / 2))
-                screen.fill(black)
-                screen.blit(text, text_rect)
-
-                pos_x = 0 + screen_width / 4
-                pos_y = 0 + screen_height / 4
-                pos = (pos_x, pos_y)
-                pygame.draw.circle(screen, white, pos, 15, 0)
-
-                if resp == pygame.K_SPACE:
-                    resp = []
-                    rig_coord_upper_left = hand_pos
-                    state_current = "calibrate_upper_right"
-
-            if state_current == "calibrate_upper_right":
-                t_state += clock_state.tick()
-                text = font.render(
-                    "Please move to the upper right corner of the screen", True,
-                    (255, 255, 255))
-                text_rect = text.get_rect(center=(screen_width / 2,
-                                                  screen_height / 2))
-                screen.fill(black)
-                screen.blit(text, text_rect)
-
-                pos_x = screen.get_width() - screen_width / 4
-                pos_y = screen_height / 4
-                pos = (pos_x, pos_y)
-                pygame.draw.circle(screen, white, pos, 15, 0)
-
-                if resp == pygame.K_SPACE:
-                    resp = []
-                    rig_coord_upper_right = hand_pos
-                    state_current = "calibrate_lower_right"
-
-            if state_current == "calibrate_lower_right":
-                t_state += clock_state.tick()
-                text = font.render(
-                    "Please move to the lower right corner of the screen", True,
-                    (255, 255, 255))
-                text_rect = text.get_rect(center=(screen_width / 2,
-                                                  screen_height / 2))
-                screen.fill(black)
-                screen.blit(text, text_rect)
-
-                pos_x = screen_width - screen_width / 4
-                pos_y = screen_height - screen_height / 4
-                pos = (pos_x, pos_y)
-                pygame.draw.circle(screen, white, pos, 15, 0)
-
-                if resp == pygame.K_SPACE:
-                    resp = []
-                    rig_coord_lower_right = hand_pos
-                    state_current = "calibrate_lower_left"
-
-            if state_current == "calibrate_lower_left":
-                t_state += clock_state.tick()
-                text = font.render(
-                    "Please move to the lower left corner of the screen", True,
-                    (255, 255, 255))
-                text_rect = text.get_rect(center=(screen_width / 2,
-                                                  screen_height / 2))
-
-                screen.fill(black)
-                screen.blit(text, text_rect)
-
-                pos_x = screen_width / 4
-                pos_y = screen_height - screen_height / 4
-                pos = (pos_x, pos_y)
-                pygame.draw.circle(screen, white, pos, 15, 0)
-
-                if resp == pygame.K_SPACE:
-                    resp = []
-                    rig_coord_lower_left = hand_pos
-                    state_current = "state_init"
-                    calibrating = False
-
-                    x_ul, y_ul = rig_coord_upper_left
-                    x_ur, y_ur = rig_coord_upper_right
-                    x_ll, y_ll = rig_coord_lower_left
-                    x_lr, y_lr = rig_coord_lower_right
-
-                    min_x = min(x_ul, x_ur, x_ll, x_lr)
-                    max_x = max(x_ul, x_ur, x_ll, x_lr)
-                    min_y = min(y_ul, y_ur, y_ll, y_lr)
-                    max_y = max(y_ul, y_ur, y_ll, y_lr)
+            if pygame.time.get_ticks() < calibration_message_until:
+                message = font.render(calibration_message, True, yellow)
+                message_rect = message.get_rect(
+                    center=(screen_width / 2, 7 * screen_height / 8))
+                screen.blit(message, message_rect)
 
             flipped_screen = pygame.transform.flip(screen, False, True)
             screen.blit(flipped_screen, (0, 0))
             pygame.display.update()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    abort_calibration = True
+                    calibrating = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        abort_calibration = True
+                        calibrating = False
+                    elif event.key == pygame.K_r:
+                        sensor_points = []
+                        calibration_index = 0
+                        calibration_message = "Calibration restarted"
+                        calibration_message_until = pygame.time.get_ticks() + 1200
+                    elif event.key == pygame.K_SPACE:
+                        position, movement = capture_stable_position(
+                            ser, recordsize, averager)
+                        if movement > 0.15:
+                            calibration_message = (
+                                "Too much movement; hold still and try this point again")
+                            calibration_message_until = pygame.time.get_ticks() + 1500
+                            continue
+
+                        sensor_points.append(position)
+                        calibration_index += 1
+
+                        if calibration_index == len(calibration_order):
+                            try:
+                                ordered_targets = np.array([
+                                    calibration_targets[i]
+                                    for i in calibration_order
+                                ])
+                                candidate, errors = fit_affine_calibration(
+                                    sensor_points, ordered_targets)
+                                errors_cm = errors / px_per_cm
+                                transformed_points = np.array([
+                                    sensor_to_screen(point, candidate)
+                                    for point in sensor_points
+                                ])
+                                repeat_errors_cm = []
+                                for i in range(len(calibration_targets)):
+                                    repeated = transformed_points[
+                                        calibration_order == i]
+                                    repeat_errors_cm.append(
+                                        np.linalg.norm(repeated[0] - repeated[1]) /
+                                        px_per_cm)
+                                if (np.mean(errors_cm) <= 0.35 and
+                                        np.max(errors_cm) <= 0.75 and
+                                        np.max(repeat_errors_cm) <= 1.0):
+                                    calibration_transform = candidate
+                                    state_current = "state_init"
+                                    calibrating = False
+                                    print(
+                                        "Calibration accepted: "
+                                        f"mean error={np.mean(errors_cm):.2f} cm, "
+                                        f"max error={np.max(errors_cm):.2f} cm, "
+                                        "max repeat difference="
+                                        f"{np.max(repeat_errors_cm):.2f} cm")
+                                else:
+                                    sensor_points = []
+                                    calibration_index = 0
+                                    calibration_message = (
+                                        "Fit was inaccurate; calibration restarted")
+                                    calibration_message_until = (
+                                        pygame.time.get_ticks() + 2000)
+                            except ValueError:
+                                sensor_points = []
+                                calibration_index = 0
+                                calibration_message = (
+                                    "Invalid point geometry; calibration restarted")
+                                calibration_message_until = (
+                                    pygame.time.get_ticks() + 2000)
+
+        if abort_calibration:
+            pygame.quit()
+            ser.close()
+            sys.exit()
 
     # set trials / phases
     trial = 0
@@ -499,17 +534,7 @@ if __name__ == "__main__":
 
         if use_liberty:
             hand_pos = getPosition(ser, recordsize, averager)[0:2]
-
-            x = hand_pos[0]
-            y = hand_pos[1]
-
-            x = -((x - min_x) / (max_x - min_x)) + 1
-            y = ((y - min_y) / (max_y - min_y)) + 0
-
-            x = x * screen_width
-            y = y * screen_height
-
-            hand_pos = (x, y)
+            hand_pos = sensor_to_screen(hand_pos, calibration_transform)
 
         else:
             hand_pos = pygame.mouse.get_pos()
