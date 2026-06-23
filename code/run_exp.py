@@ -29,22 +29,30 @@ if __name__ == "__main__":
 
     # This method grabs the position of the sensor
     def getPosition(ser, recordsize, averager):
-        ser.reset_input_buffer()
-
         # Set variables
         # This defines the length of the binary header (bytes 0-7)
         header = 8
         # This defines the bytesize of IEEE floating point
         byte_size = 4
+        expected_size = header + 3 * byte_size
 
         # Obtain data
+        ser.reset_input_buffer()
         ser.write(b"P")
-        # time.sleep(0.1)
-        # print("inWaiting " + str(ser.inWaiting()))
-        # print("recorded size " + str(recordsize))
+
+        deadline = time.time() + 0.1
+        while ser.inWaiting() < expected_size:
+            if time.time() > deadline:
+                raise RuntimeError(
+                    "Timed out waiting for Liberty frame: "
+                    f"{ser.inWaiting()}/{expected_size} bytes available")
+            time.sleep(0.001)
 
         # Read header to remove it from the input buffer
-        ser.read(header)
+        header_bytes = ser.read(header)
+        if len(header_bytes) != header:
+            raise RuntimeError(
+                f"Incomplete Liberty header: {len(header_bytes)} bytes")
 
         positions = []
 
@@ -52,6 +60,9 @@ if __name__ == "__main__":
         for x in range(3):
             # Read the coordinate
             coord = ser.read(byte_size)
+            if len(coord) != byte_size:
+                raise RuntimeError(
+                    f"Incomplete Liberty coordinate: {len(coord)} bytes")
 
             # Convert hex to floating point (little endian order)
             coord = struct.unpack("<f", coord)[0]
@@ -61,14 +72,36 @@ if __name__ == "__main__":
         return positions
 
 
-    def capture_stable_position(ser, recordsize, averager, n_samples=5):
+    def capture_stable_position(ser, recordsize, averager, n_samples=20):
         """Return a robust position estimate and within-burst movement in cm."""
-        samples = np.array([
-            getPosition(ser, recordsize, averager)[0:2]
-            for _ in range(n_samples)
-        ])
+        samples = []
+        attempts = 0
+        max_attempts = n_samples * 3
+
+        while len(samples) < n_samples and attempts < max_attempts:
+            attempts += 1
+            try:
+                sample = getPosition(ser, recordsize, averager)[0:2]
+            except RuntimeError as err:
+                print(err)
+                continue
+
+            if np.all(np.isfinite(sample)):
+                samples.append(sample)
+
+        if len(samples) < max(5, n_samples // 2):
+            return np.array([np.nan, np.nan]), np.inf
+
+        samples = np.array(samples)
         position = np.median(samples, axis=0)
         radial_error = np.linalg.norm(samples - position, axis=1)
+
+        clean = radial_error < 5.0
+        if np.sum(clean) >= max(5, n_samples // 2):
+            samples = samples[clean]
+            position = np.median(samples, axis=0)
+            radial_error = np.linalg.norm(samples - position, axis=1)
+
         movement = np.percentile(radial_error, 90)
         return position, movement
 
