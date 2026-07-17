@@ -61,8 +61,8 @@ pip install seaborn==0.13.2
 
 - `code/run_exp.py`: Pygame experiment runner. It supports mouse input for
   testing and Liberty tracking for the lab setup. The current inline trial
-  structure uses the `nf_burst_after_clamp` diagnostic design followed by
-  adaptation and generalization phases.
+  structure implements the four-phase Hewitson visuomotor adaptation design:
+  familiarisation, baseline, adaptation, and generalisation.
 - `code_noise_model/`: Python package used to simulate candidate trial
   sequences and evaluate which designs best recover output-only versus
   process-noise models.
@@ -76,7 +76,8 @@ From the `code/` directory:
 python run_exp.py
 ```
 
-The script prompts for subject number and day number, then writes data to
+The script prompts for subject number, day number, and the counterbalanced
+rotation direction (CW or CCW), then writes data to
 `data/sub_<subject>_day_<day>_data.csv` and movement samples to
 `data/sub_<subject>_day_<day>_data_move.csv`. Existing files with the same
 subject/day are not overwritten.
